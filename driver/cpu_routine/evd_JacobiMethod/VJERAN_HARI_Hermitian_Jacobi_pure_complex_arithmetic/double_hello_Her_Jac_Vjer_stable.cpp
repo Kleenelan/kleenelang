@@ -10,17 +10,17 @@ using namespace std;
 
 #define NA 40
 
-void print_matrix(float* A, int M, int N, int lda);
-void print_vector(float* A, int n);
-void print_complex_matrix(int M, int N, float2* A, int lda);
-void print_complex_vector(float2* A, int n);
+void print_matrix(double* A, int M, int N, int lda);
+void print_vector(double* A, int n);
+void print_complex_matrix(int M, int N, double2* A, int lda);
+void print_complex_vector(double2* A, int n);
 
 
-void complex_gemm(int M, int N, int K, float2* A, int lda, float2* B, int ldb, float2* C, int ldc);
-void complex_matrix_conjugate_transposition(int n, float2* A, int lda, float2* B, int ldb);
+void complex_gemm(int M, int N, int K, double2* A, int lda, double2* B, int ldb, double2* C, int ldc);
+void complex_matrix_conjugate_transposition(int n, double2* A, int lda, double2* B, int ldb);
 
 
-float2 zero__ = { 0.0f,0.0f };
+double2 zero__ = { 0.0,0.0 };
 
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -91,10 +91,10 @@ void sort(T* A, int n, unsigned* col_id) {
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 
-void set_V_2_E(unsigned n, float2* V, int ldv)
+void set_V_2_E(unsigned n, double2* V, int ldv)
 {
-    float2 one_ = make_cuFloatComplex(1.0f, 0.0f);
-    float2 zero_ = make_cuFloatComplex(0.0f, 0.0f);
+    double2 one_ = make_cuDoubleComplex(1.0, 0.0);
+    double2 zero_ = make_cuDoubleComplex(0.0, 0.0);
 
     for (int j = 0; j < n; j++)
     {
@@ -113,13 +113,13 @@ void set_V_2_E(unsigned n, float2* V, int ldv)
 
 
 
-void norm_max_ij(float2* A, int n, int lda, int &p, int &q)
+void norm_max_ij(double2* A, int n, int lda, int &p, int &q)
 {
-    float max = 0.0f;
+    double max = 0.0;
     for (int i = 0; i < n; i++){
         for (int j = i + 1; j < n; j++){
-            float tmp;
-            tmp = cuCabsf(A[i + j * lda]);
+            double tmp;
+            tmp = cuCabs(A[i + j * lda]);
             if (tmp > max){
                 max = tmp;
                 p = i;
@@ -129,20 +129,20 @@ void norm_max_ij(float2* A, int n, int lda, int &p, int &q)
     }
 }
 
-float signf(float a)
+double signf(double a)
 {
     union f_i
     {
-        float a;
-        int x;
+        double a;
+        int64_t x;
     };
     union f_i tmp;
     tmp.a = a;
 
-    return (tmp.x >> 31) ? -1.0f : 1.0f;
+    return (tmp.x >> 63) ? -1.0 : 1.0;
 }
 
-void hermite_jacobi(float2* A, int n, int lda, bool cal_Vectors, float2* V, int ldv, float* Sig, float eps, unsigned jt)
+void hermite_jacobi(double2* A, int n, int lda, bool cal_Vectors, double2* V, int ldv, double* Sig, double eps, unsigned jt)
 {
 
     set_V_2_E(n, V, ldv);
@@ -158,73 +158,73 @@ void hermite_jacobi(float2* A, int n, int lda, bool cal_Vectors, float2* V, int 
         j = 1;
         norm_max_ij(A, n, lda, i, j);
 
-        float s, c, t;
-        float2 Aij;
-        float norm_Aij;
-        float Aii, Ajj;
-        float Aii_Ajj;
-        float2 s_plus, s_neg;
+        double s, c, t;
+        double2 Aij;
+        double norm_Aij;
+        double Aii, Ajj;
+        double Aii_Ajj;
+        double2 s_plus, s_neg;
 
         Aii = A[i + i * lda].x;
         Ajj = A[j + j * lda].x;
         Aii_Ajj = Aii - Ajj;
         Aij = A[i + j * lda];
-        norm_Aij = cuCabsf(Aij);
+        norm_Aij = cuCabs(Aij);
         if (norm_Aij < eps){
             printf("count=%d\n", count);
             break;
         }
 
-        t = 2.0f * norm_Aij * signf(Aii_Ajj) / (fabs(Aii_Ajj) + sqrt(Aii_Ajj * Aii_Ajj + 4.0f * norm_Aij * norm_Aij));
-        c = 1.0f / sqrt(1 + t * t);
+        t = 2.0 * norm_Aij * signf(Aii_Ajj) / (fabs(Aii_Ajj) + sqrt(Aii_Ajj * Aii_Ajj + 4.0 * norm_Aij * norm_Aij));
+        c = 1.0 / sqrt(1 + t * t);
         s = c * t;
-        float sDNAij;//s/|Aij|
+        double sDNAij;//s/|Aij|
         sDNAij = s / norm_Aij;
-        s_plus = make_cuFloatComplex(sDNAij * Aij.x, sDNAij * Aij.y);
-        s_neg = cuConjf(s_plus);
+        s_plus = make_cuDoubleComplex(sDNAij * Aij.x, sDNAij * Aij.y);
+        s_neg = cuConj(s_plus);
 
         //A[i + i * lda].x = Aii + t * norm_Aij; A[j + j * lda].x = Ajj - t * norm_Aij;
-        float2 cC, sC;
-        cC = make_cuFloatComplex(c, 0.0f);
-        sC = make_cuFloatComplex(s, 0.0f);
+        double2 cC, sC;
+        cC = make_cuDoubleComplex(c, 0.0);
+        sC = make_cuDoubleComplex(s, 0.0);
 
         for (int r = 0; r < n; r++) {// right_rotate  i-th column  j-th column  changed
-            float2 Ari, Arj;
+            double2 Ari, Arj;
             Ari = A[r + i * lda];
             Arj = A[r + j * lda];
             //if(r!=i)
-            A[r + i * lda] = cuCaddf(cuCmulf(Ari, cC), cuCmulf(Arj, s_neg));//Ari * c    + Arj * S-
+            A[r + i * lda] = cuCadd(cuCmul(Ari, cC), cuCmul(Arj, s_neg));//Ari * c    + Arj * S-
             //if(r!=j)
-            A[r + j * lda] = cuCsubf(cuCmulf(Arj, cC), cuCmulf(Ari, s_plus));//Ari *(-S+) + Arj * c
+            A[r + j * lda] = cuCsub(cuCmul(Arj, cC), cuCmul(Ari, s_plus));//Ari *(-S+) + Arj * c
         }
         for (int r = 0; r < n; r++) {// left_rotate i-th row   j-th row changed
-            float2 Air, Ajr;
+            double2 Air, Ajr;
             Air = A[i + r * lda];
             Ajr = A[j + r * lda];
 
-            A[i + r * lda] = cuCaddf(cuCmulf(cC, Air), cuCmulf(s_plus, Ajr));//  c * Air   + S+ * Ajr
-            A[j + r * lda] = cuCsubf(cuCmulf(cC, Ajr), cuCmulf(s_neg, Air));// -S-* Air   +  c * Ajr
+            A[i + r * lda] = cuCadd(cuCmul(cC, Air), cuCmul(s_plus, Ajr));//  c * Air   + S+ * Ajr
+            A[j + r * lda] = cuCsub(cuCmul(cC, Ajr), cuCmul(s_neg, Air));// -S-* Air   +  c * Ajr
         }
 
         A[i + j * lda] = zero__;
         A[j + i * lda] = zero__;
-        float A_i_i = c * c * Aii + 2.0f * c * s * norm_Aij + s * s * Ajj;
+        double A_i_i = c * c * Aii + 2.0 * c * s * norm_Aij + s * s * Ajj;
          printf("A[i,i] %d= %f\n", count, A[i+i*lda].x);
          printf("A[i,i] %d= %f\n", count, A_i_i);
-        float a_ii_look = Aii + t*norm_Aij;
+        double a_ii_look = Aii + t*norm_Aij;
         printf("a_ii_ %d = %f\n", count, a_ii_look);
 
-        float A_j_j = s * s * Aii - 2.0f * c * s * norm_Aij + c * c * Ajj;
+        double A_j_j = s * s * Aii - 2.0 * c * s * norm_Aij + c * c * Ajj;
         printf("A[j,j] %d= %f\n", count, A[j + j * lda].x);
         printf("A[j,j] %d= %f\n", count, A_j_j);
-        float a_jj_look = Ajj - t*norm_Aij;
+        double a_jj_look = Ajj - t*norm_Aij;
         printf("a_jj_ %d = %f\n", count, a_jj_look);
 
 
         //A[i + i * lda].x = A_i_i;        A[i + i * lda].y = 0.0f;
         //A[j + j * lda].x = A_j_j;        A[j + j * lda].y = 0.0f;
-        A[i + i * lda].x = a_ii_look;        A[i + i * lda].y = 0.0f;
-        A[j + j * lda].x = a_jj_look;        A[j + j * lda].y = 0.0f;
+        A[i + i * lda].x = a_ii_look;        A[i + i * lda].y = 0.0;
+        A[j + j * lda].x = a_jj_look;        A[j + j * lda].y = 0.0;
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
         
 
@@ -237,11 +237,11 @@ void hermite_jacobi(float2* A, int n, int lda, bool cal_Vectors, float2* V, int 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
         if (cal_Vectors) {
             for (int r = 0; r < n; r++) {// right_rotate  i-th column  j-th column  changed
-                float2 Vri, Vrj;
+                double2 Vri, Vrj;
                 Vri = V[r + i * lda];
                 Vrj = V[r + j * lda];
-                V[r + i * lda] = cuCaddf(cuCmulf(Vri, cC), cuCmulf(Vrj, s_neg));//Ari * c    + Arj * S-
-                V[r + j * lda] = cuCsubf(cuCmulf(Vrj, cC), cuCmulf(Vri, s_plus));//Ari *(-S+) + Arj * c
+                V[r + i * lda] = cuCadd(cuCmul(Vri, cC), cuCmul(Vrj, s_neg));//Ari * c    + Arj * S-
+                V[r + j * lda] = cuCsub(cuCmul(Vrj, cC), cuCmul(Vri, s_plus));//Ari *(-S+) + Arj * c
             }
         }
     }
@@ -252,11 +252,11 @@ void hermite_jacobi(float2* A, int n, int lda, bool cal_Vectors, float2* V, int 
 }
 
 
-void init_complex_matrix(int M, int N, float2* A, int lda) {
+void init_complex_matrix(int M, int N, double2* A, int lda) {
     random_device rd;
     mt19937 gen(rd());
-    float range_start = -3.3f;
-    float range_end = 3.3f;
+    double range_start = -3.3;
+    double range_end = 3.3;
 
     uniform_real_distribution<> dis(range_start, range_end);
 
@@ -269,13 +269,13 @@ void init_complex_matrix(int M, int N, float2* A, int lda) {
 }
 
 
-void init_Hermitian_matrix(int N, float2* A, int lda) {
+void init_Hermitian_matrix(int N, double2* A, int lda) {
 
-    float2 *a;
-    a = (float2*)malloc(N * N * sizeof(float2));
+    double2 *a;
+    a = (double2*)malloc(N * N * sizeof(double2));
     init_complex_matrix(N, N, a, N);
-    float2* at;// [NA * NA] ;
-    at = (float2*)malloc(N * N * sizeof(float2));
+    double2* at;// [NA * NA] ;
+    at = (double2*)malloc(N * N * sizeof(double2));
     complex_matrix_conjugate_transposition(N, a, N, at, N);
     complex_gemm(N, N, N, at, N, a, N, A, N);
 
@@ -284,7 +284,7 @@ void init_Hermitian_matrix(int N, float2* A, int lda) {
 int main()
 {
     /*
-    float2 A[NA * NA] =
+    double2 A[NA * NA] =
     {
             {1.8937,  0.0000}, {1.4574, 0.2006}, {1.6041, -0.2653}, {2.3225, -0.3367},
             {1.4574, -0.2006}, {1.6985, 0.0000}, {1.6143, -0.2756}, {2.4423, -0.4715},
@@ -293,7 +293,7 @@ int main()
     };*/
 
     //init_Hermitian_matrix(NA, A, NA);
-    float2 A[NA * NA] = {
+    double2 A[NA * NA] = {
         {3686522159104.000000, 0.000000}, {3670476849152.000000, -228742266880.000000}, {3620277846016.000000, -459511595008.000000}, 
         {3534884175872.000000, -682323738624.000000}, {3418048954368.000000, -886447013888.000000}, {3278106001408.000000, -1063467220992.000000},
         {3124138082304.000000, -1206713188352.000000}, {2967104126976.000000, -1312211992576.000000}, {2816762445824.000000, -1381561663488.000000}, {2680696340480.000000, -1418516496384.000000}, {2565027135488.000000, -1428542586880.000000}, {2472976842752.000000, -1417251782656.000000},
@@ -330,25 +330,27 @@ int main()
 
     };
 
-    float2 A_con[NA * NA];
-    memcpy(A_con, A, NA * NA * sizeof(float2));
+    double2 A_con[NA * NA];
+    memcpy(A_con, A, NA * NA * sizeof(double2));
 
     int n = NA;
     int lda = n;
-    float2 V[NA * NA];
+    double2 V[NA * NA];
 
     int ldv = n;
 
     bool cal_eiV = true;
-    float Sig[NA];
-    float eps = 1.0e-24;
+    double Sig[NA];
+    double eps = 1.0e-24;
     unsigned jt = 1000000000;
     printf("A=\n");
     print_complex_matrix(n, n, A, lda);
 
     hermite_jacobi(A, n, lda, cal_eiV, V, ldv, Sig, eps, jt);
 
-    
+    printf("A(eigenValue)=\n");
+    print_complex_matrix(n, n, A, lda);
+
     printf("Sigma(raw)=\n");
     //print_complex_matrix(n, n, A, lda);
     print_vector(Sig, n);
@@ -357,7 +359,7 @@ int main()
     col_id = (unsigned*)malloc(n * sizeof(unsigned));
     //template<typename T>
     //void sort(T * A, int n, unsigned* col_id)
-    sort<float>(Sig, n, col_id);
+    sort<double>(Sig, n, col_id);
 
     printf("\n\nSigma(sorted)=\n");
     //print_complex_matrix(n, n, A, lda);
@@ -367,17 +369,17 @@ int main()
     printf("\n\nEigenVectors=\n");
     print_complex_matrix(n, n, V, ldv);
 
-    //void complex_gemm(int M, int N, int K, float2 * A, int lda, float2 * B, int ldb, float2 * C, int ldc);
-    //void complex_matrix_conjugate_transposition(int n, float2 * A, int lda, float2 * B, int ldb);
-    float2 Vt[NA * NA];
+    //void complex_gemm(int M, int N, int K, double2 * A, int lda, double2 * B, int ldb, double2 * C, int ldc);
+    //void complex_matrix_conjugate_transposition(int n, double2 * A, int lda, double2 * B, int ldb);
+    double2 Vt[NA * NA];
     int ldvt = n;
     complex_matrix_conjugate_transposition(n, V, ldv, Vt, ldvt);
     printf("V'=\n");
     print_complex_matrix(n, n, Vt, ldvt);
 
-    float2 VtxA[NA * NA];
+    double2 VtxA[NA * NA];
     int ldvtxa = n;
-    float2 VtxAxV[NA * NA];
+    double2 VtxAxV[NA * NA];
     int ldvtxaxv = n;
 
     complex_gemm(n, n, n, Vt, ldvt, A_con, lda, VtxA, ldvtxa);
@@ -387,7 +389,7 @@ int main()
     print_complex_matrix(n, n, VtxAxV, ldvtxaxv);
 
 
-    float2 E[NA * NA];
+    double2 E[NA * NA];
     int lde = n;
     complex_gemm(n, n, n, Vt, ldvt, V, ldv, E, lde);
     printf("E=VtxV=\n");
@@ -405,12 +407,12 @@ int main()
 
 
 
-void print_vector(float* A, int n) {
+void print_vector(double* A, int n) {
     for (int i = 0; i < n; i++)
         printf("%20.5f\n", A[i]);
 }
 
-void print_matrix(float* A, int M, int N, int lda) {
+void print_matrix(double* A, int M, int N, int lda) {
     for (int i = 0; i < M; i++) {
         for (int j = 0; j < N; j++)
             printf(" %8.5f", A[i + j * lda]);
@@ -419,14 +421,14 @@ void print_matrix(float* A, int M, int N, int lda) {
     printf("\n");
 }
 
-void print_complex_vector(float2* A, int n)
+void print_complex_vector(double2* A, int n)
 {
     for (int i = 0; i < n; i++) {
         printf("%7.4f + %7.4f*i  ", A[i].x, A[i].y);
     }
 }
 
-void print_complex_matrix(int M, int N, float2* A, int lda)
+void print_complex_matrix(int M, int N, double2* A, int lda)
 {
     for (int i = 0; i < M; i++)
     {
@@ -440,26 +442,26 @@ void print_complex_matrix(int M, int N, float2* A, int lda)
 }
 
 
-void complex_matrix_conjugate_transposition(int n, float2* A, int lda, float2* B, int ldb)
+void complex_matrix_conjugate_transposition(int n, double2* A, int lda, double2* B, int ldb)
 {
     for (int i = 0; i < n; i++) {
         for(int j=0; j<n; j++)
         {
-            B[i + j * ldb] = cuConjf(A[j + i * lda]);
+            B[i + j * ldb] = cuConj(A[j + i * lda]);
         }
     }
 }
 
-void complex_gemm(int M, int N, int K, float2* A, int lda, float2* B, int ldb, float2* C, int ldc)
+void complex_gemm(int M, int N, int K, double2* A, int lda, double2* B, int ldb, double2* C, int ldc)
 {
-    float2 zero_ = make_cuFloatComplex(0.0f, 0.0f);
+    double2 zero_ = make_cuDoubleComplex(0.0, 0.0);
 
     for (int i = 0; i < M; i++) {
         for (int j = 0; j < N; j++) {
-            float2 sigma = zero_;
+            double2 sigma = zero_;
 
             for (int k = 0; k < K; k++) {
-                sigma = cuCaddf(sigma, cuCmulf(A[i + k * lda], B[k + j * ldb]));
+                sigma = cuCadd(sigma, cuCmul(A[i + k * lda], B[k + j * ldb]));
             }
             C[i + j * ldc] = sigma;
         }
@@ -506,7 +508,7 @@ octave:39>
 
 
 
-void hermite_jacobi_01(float2* A, int n, int lda, bool cal_Vectors, float2* V, int ldv, float* Sig, float eps, unsigned jt)
+void hermite_jacobi_01(double2* A, int n, int lda, bool cal_Vectors, double2* V, int ldv, double* Sig, double eps, unsigned jt)
 {
     set_V_2_E(n, V, ldv);
     printf("V=E=\n");
@@ -521,57 +523,57 @@ void hermite_jacobi_01(float2* A, int n, int lda, bool cal_Vectors, float2* V, i
         j = 1;
         norm_max_ij(A, n, lda, i, j);
 
-        float s, c, t;
-        float2 Aij;
-        float norm_Aij;
-        float Aii, Ajj;
-        float Aii_Ajj;
-        float2 s_plus, s_neg;
+        double s, c, t;
+        double2 Aij;
+        double norm_Aij;
+        double Aii, Ajj;
+        double Aii_Ajj;
+        double2 s_plus, s_neg;
 
         Aii = A[i + i * lda].x;
         Ajj = A[j + j * lda].x;
         Aii_Ajj = Aii - Ajj;
         Aij = A[i + j * lda];
-        norm_Aij = cuCabsf(Aij);
+        norm_Aij = cuCabs(Aij);
 
         t = 2.0f * norm_Aij * signf(Aii_Ajj) / (fabs(Aii_Ajj) + sqrt(Aii_Ajj * Aii_Ajj + 4.0f * norm_Aij * norm_Aij));
         c = 1.0f / sqrt(1 + t * t);
         s = c * t;
-        float sDNAij;//s/|Aij|
+        double sDNAij;//s/|Aij|
         sDNAij = s / norm_Aij;
-        s_plus = make_cuFloatComplex(sDNAij * Aij.x, sDNAij * Aij.y);
-        s_neg = cuConjf(s_plus);
+        s_plus = make_cuDoubleComplex(sDNAij * Aij.x, sDNAij * Aij.y);
+        s_neg = cuConj(s_plus);
 
         //A[i + i * lda].x = Aii + t * norm_Aij; A[j + j * lda].x = Ajj - t * norm_Aij;
-        float2 cC, sC;
-        cC = make_cuFloatComplex(c, 0.0f);
-        sC = make_cuFloatComplex(s, 0.0f);
+        double2 cC, sC;
+        cC = make_cuDoubleComplex(c, 0.0);
+        sC = make_cuDoubleComplex(s, 0.0);
 
         for (int r = 0; r < n; r++) {// right_rotate  i-th column  j-th column  changed
-            float2 Ari, Arj;
+            double2 Ari, Arj;
             Ari = A[r + i * lda];
             Arj = A[r + j * lda];
             //if(r!=i)
-            A[r + i * lda] = cuCaddf(cuCmulf(Ari, cC), cuCmulf(Arj, s_neg));//Ari * c    + Arj * S-
+            A[r + i * lda] = cuCadd(cuCmul(Ari, cC), cuCmul(Arj, s_neg));//Ari * c    + Arj * S-
             //if(r!=j)
-            A[r + j * lda] = cuCsubf(cuCmulf(Arj, cC), cuCmulf(Ari, s_plus));//Ari *(-S+) + Arj * c
+            A[r + j * lda] = cuCsub(cuCmul(Arj, cC), cuCmul(Ari, s_plus));//Ari *(-S+) + Arj * c
         }
         for (int r = 0; r < n; r++) {// left_rotate i-th row   j-th row changed
-            float2 Air, Ajr;
+            double2 Air, Ajr;
             Air = A[i + r * lda];
             Ajr = A[j + r * lda];
 
-            A[i + r * lda] = cuCaddf(cuCmulf(cC, Air), cuCmulf(s_plus, Ajr));//  c * Air   + S+ * Ajr
-            A[j + r * lda] = cuCsubf(cuCmulf(cC, Ajr), cuCmulf(s_neg, Air));// -S-* Air   +  c * Ajr
+            A[i + r * lda] = cuCadd(cuCmul(cC, Air), cuCmul(s_plus, Ajr));//  c * Air   + S+ * Ajr
+            A[j + r * lda] = cuCsub(cuCmul(cC, Ajr), cuCmul(s_neg, Air));// -S-* Air   +  c * Ajr
         }
 
         if (cal_Vectors) {
             for (int r = 0; r < n; r++) {// right_rotate  i-th column  j-th column  changed
-                float2 Vri, Vrj;
+                double2 Vri, Vrj;
                 Vri = V[r + i * lda];
                 Vrj = V[r + j * lda];
-                V[r + i * lda] = cuCaddf(cuCmulf(Vri, cC), cuCmulf(Vrj, s_neg));//Ari * c    + Arj * S-
-                V[r + j * lda] = cuCsubf(cuCmulf(Vrj, cC), cuCmulf(Vri, s_plus));//Ari *(-S+) + Arj * c
+                V[r + i * lda] = cuCadd(cuCmul(Vri, cC), cuCmul(Vrj, s_neg));//Ari * c    + Arj * S-
+                V[r + j * lda] = cuCsub(cuCmul(Vrj, cC), cuCmul(Vri, s_plus));//Ari *(-S+) + Arj * c
             }
         }
     }
