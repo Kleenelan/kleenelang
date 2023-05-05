@@ -1,14 +1,23 @@
 // hello_HJ_world.cpp : 此文件包含 "main" 函数。程序执行将在此处开始并结束。
 //
 
+#include <random>
 #include <iostream>
+#include <string.h>
 #include "cuComplex.h"
 
+using namespace std;
+
+#define NA 5
 
 void print_matrix(float* A, int M, int N, int lda);
 void print_vector(float* A, int n);
 void print_complex_matrix(int M, int N, float2* A, int lda);
 void print_complex_vector(float2* A, int n);
+
+
+void complex_gemm(int M, int N, int K, float2* A, int lda, float2* B, int ldb, float2* C, int ldc);
+void complex_matrix_conjugate_transposition(int n, float2* A, int lda, float2* B, int ldb);
 
 void set_V_2_E(unsigned n, float2* V, int ldv)
 {
@@ -32,7 +41,6 @@ void set_V_2_E(unsigned n, float2* V, int ldv)
 
 
 
-#define NA 4
 
 
 
@@ -140,25 +148,60 @@ void hermite_jacobi(float2* A, int n, int lda, bool cal_Vectors, float2* V, int 
 }
 
 
+void init_complex_matrix(int M, int N, float2* A, int lda) {
+    random_device rd;
+    mt19937 gen(rd());
+    float range_start = -3.3f;
+    float range_end = 3.3f;
+
+    uniform_real_distribution<> dis(range_start, range_end);
+
+    for (int i = 0; i < M; i++) {
+        for (int j = 0; j < N; j++) {
+            A[i + j * lda].x = dis(gen);
+            A[i + j * lda].y = dis(gen);
+        }
+    }
+}
+
+
+void init_Hermitian_matrix(int N, float2* A, int lda) {
+
+    float2 *a;
+    a = (float2*)malloc(N * N * sizeof(float2));
+    init_complex_matrix(N, N, a, N);
+    float2* at;// [NA * NA] ;
+    at = (float2*)malloc(N * N * sizeof(float2));
+    complex_matrix_conjugate_transposition(N, a, N, at, N);
+    complex_gemm(N, N, N, at, N, a, N, A, N);
+
+}
 
 int main()
 {
-    float2 A[NA * NA] = 
+    float2 A[NA * NA];/** =
     {
             {1.8937,  0.0000}, {1.4574, 0.2006}, {1.6041, -0.2653}, {2.3225, -0.3367},
             {1.4574, -0.2006}, {1.6985, 0.0000}, {1.6143, -0.2756}, {2.4423, -0.4715},
             {1.6041,  0.2653}, {1.6143, 0.2756}, {2.2980,  0.0000}, {2.3027,  0.2985},
             {2.3225,  0.3367}, {2.4423, 0.4715}, {2.3027, -0.2985}, {4.2158,  0.0000}
-    };
+    };*/
+
+    init_Hermitian_matrix(NA, A, NA);
+
+    float2 A_con[NA * NA];
+    memcpy(A_con, A, NA * NA * sizeof(float2));
 
     int n = NA;
     int lda = n;
     float2 V[NA * NA];
+
     int ldv = n;
+
     bool cal_eiV = true;
     float Sig[NA];
     float eps = 1.0e-8;
-    unsigned jt = 200;
+    unsigned jt = 300;
     printf("A=\n");
     print_complex_matrix(n, n, A, lda);
 
@@ -168,6 +211,32 @@ int main()
     print_complex_matrix(n, n, A, lda);
     printf("EigenVectors=\n");
     print_complex_matrix(n, n, V, ldv);
+
+    //void complex_gemm(int M, int N, int K, float2 * A, int lda, float2 * B, int ldb, float2 * C, int ldc);
+    //void complex_matrix_conjugate_transposition(int n, float2 * A, int lda, float2 * B, int ldb);
+    float2 Vt[NA * NA];
+    int ldvt = n;
+    complex_matrix_conjugate_transposition(n, V, ldv, Vt, ldvt);
+    printf("V'=\n");
+    print_complex_matrix(n, n, Vt, ldvt);
+
+    float2 VtxA[NA * NA];
+    int ldvtxa = n;
+    float2 VtxAxV[NA * NA];
+    int ldvtxaxv = n;
+
+    complex_gemm(n, n, n, Vt, ldvt, A_con, lda, VtxA, ldvtxa);
+    complex_gemm(n, n, n, VtxA, ldvtxa, V, ldv, VtxAxV, ldvtxaxv);
+
+    printf("VtxAxV=\n");
+    print_complex_matrix(n, n, VtxAxV, ldvtxaxv);
+
+
+    float2 E[NA * NA];
+    int lde = n;
+    complex_gemm(n, n, n, Vt, ldvt, V, ldv, E, lde);
+    printf("E=VtxV=\n");
+    print_complex_matrix(n, n, E, lde);
 
     std::cout << "Hello World!\n";
 }
@@ -216,7 +285,31 @@ void print_complex_matrix(int M, int N, float2* A, int lda)
 }
 
 
+void complex_matrix_conjugate_transposition(int n, float2* A, int lda, float2* B, int ldb)
+{
+    for (int i = 0; i < n; i++) {
+        for(int j=0; j<n; j++)
+        {
+            B[i + j * ldb] = cuConjf(A[j + i * lda]);
+        }
+    }
+}
 
+void complex_gemm(int M, int N, int K, float2* A, int lda, float2* B, int ldb, float2* C, int ldc)
+{
+    float2 zero_ = make_cuFloatComplex(0.0f, 0.0f);
+
+    for (int i = 0; i < M; i++) {
+        for (int j = 0; j < N; j++) {
+            float2 sigma = zero_;
+
+            for (int k = 0; k < K; k++) {
+                sigma = cuCaddf(sigma, cuCmulf(A[i + k * lda], B[k + j * ldb]));
+            }
+            C[i + j * ldc] = sigma;
+        }
+    }
+}
 
 
 
